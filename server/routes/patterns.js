@@ -1,7 +1,7 @@
 import express from 'express';
 import auth from '../middleware/auth.js';
 import MoodPattern from '../models/MoodPattern.js';
-import { getUserContext } from '../services/patternEngine.js';
+import { computeUserPatterns } from '../services/patternEngineV2.js';
 import { generateAIResponse } from '../services/insightGenerator.js';
 import { PERSONALITY_PROMPT } from '../prompts/personality.js';
 
@@ -20,64 +20,68 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/patterns/predict — Generate prediction based on all data
+// POST /api/patterns/predict — Compute real patterns, let the LLM phrase them
 router.post('/predict', auth, async (req, res) => {
   try {
-    const context = await getUserContext(req.userId);
+    const computed = await computeUserPatterns(req.userId, 30);
 
-    const systemPrompt = `${PERSONALITY_PROMPT}\n\nYou are the Prediction Engine of MirrorSpace. Analyze the user's recent data (Sleep Logs, Journal Entries, Chat Sessions) and predict their current burnout, anxiety, and emotional drift risks. 
-Return ONLY a valid JSON object with the following schema:
+    if (!computed.meetsMinimumData) {
+      // Not enough signal to compute anything real — skip the LLM call entirely
+      // (cost guardrail) and show the same day-1 copy as before.
+      const pattern = await MoodPattern.create({
+        userId: req.userId,
+        period: { start: computed.windowStart, end: computed.windowEnd },
+        patterns: { ...computed.scores, facts: [] },
+        meetsMinimumData: false,
+        dataPoints: computed.dataPoints,
+        aiInsight: {
+          headline: "The system is quiet.",
+          summary: "We don't have enough data yet, but what we see is calm."
+        }
+      });
+      return res.json(pattern);
+    }
+
+    const systemPrompt = `${PERSONALITY_PROMPT}\n\nYou are the Prediction Engine of MirrorSpace. You will be given ALREADY-COMPUTED facts and scores. Do not invent, adjust, or restate any numbers differently than given. Your only job is to phrase a short headline and a 1-2 sentence summary in MirrorSpace's observational voice, grounded strictly in the facts provided.
+Return ONLY a valid JSON object with this schema:
 {
-  "burnoutIndicators": <number 0-100>,
-  "anxietyBuildUp": <number 0-100>,
-  "emotionalDrift": <number 0-100>,
-  "headline": "<1 short poetic sentence>",
-  "summary": "<1-2 sentences of gentle reflection on their state>"
+  "headline": "<1 short poetic sentence, no numbers>",
+  "summary": "<1-2 sentences, may reference the facts in plain language but must not state any number not already given to you>"
 }`;
 
-    const userPrompt = `User Context:\n- Sleep: ${context.sleepTrend}\n- Journal: ${context.journalSentiment}\n- Activity: ${context.recentPatterns.chatSessions} chats, ${context.recentPatterns.journalEntries} journals.\n- Days since last journal: ${context.recentPatterns.daysSinceJournal ?? 'unknown'}`;
+    const factLines = computed.facts.length
+      ? computed.facts.map(f => `- ${f.claim}`).join('\n')
+      : '- no strong facts this period';
+
+    const userPrompt = `Computed facts (do not alter any numbers):\n${factLines}\n\nComputed scores: burnout=${computed.scores.burnoutIndicators}, anxiety=${computed.scores.anxietyBuildUp}, emotionalDrift=${computed.scores.emotionalDrift}.`;
 
     const response = await generateAIResponse(systemPrompt, userPrompt);
-    let parsedText = {
-      burnoutIndicators: 30,
-      anxietyBuildUp: 30,
-      emotionalDrift: 30,
-      headline: "The system is quiet.",
-      summary: "We don't have enough data yet, but what we see is calm."
+    let aiInsight = {
+      headline: "The tides are shifting quietly.",
+      summary: "Patterns are forming, though nothing urgent stands out."
     };
 
     if (response) {
       try {
         const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        parsedText = JSON.parse(cleaned);
+        const parsed = JSON.parse(cleaned);
+        // Only ever read headline/summary — any numeric field the LLM hallucinates
+        // into its JSON is structurally ignored, which is what actually enforces
+        // "the LLM only writes the words".
+        if (parsed.headline) aiInsight.headline = parsed.headline;
+        if (parsed.summary) aiInsight.summary = parsed.summary;
       } catch (e) {
-        console.error('Failed to parse prediction json:', e);
+        console.error('Failed to parse prediction phrasing json:', e);
       }
     }
 
     const pattern = await MoodPattern.create({
       userId: req.userId,
-      period: {
-        start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // last 7 days
-        end: new Date()
-      },
-      patterns: {
-        emotionalDrift: parsedText.emotionalDrift || 0,
-        burnoutIndicators: parsedText.burnoutIndicators || 0,
-        anxietyBuildUp: parsedText.anxietyBuildUp || 0,
-        sleepDebt: 0,
-        socialWithdrawal: 0,
-        languageComplexity: 0
-      },
-      dataPoints: {
-        sleepLogs: context.recentPatterns.sleepLogs,
-        journalEntries: context.recentPatterns.journalEntries,
-        chatSessions: context.recentPatterns.chatSessions
-      },
-      aiInsight: {
-        headline: parsedText.headline,
-        summary: parsedText.summary
-      }
+      period: { start: computed.windowStart, end: computed.windowEnd },
+      patterns: { ...computed.scores, facts: computed.facts },
+      meetsMinimumData: true,
+      dataPoints: computed.dataPoints,
+      aiInsight
     });
 
     res.json(pattern);

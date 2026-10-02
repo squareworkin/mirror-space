@@ -143,6 +143,18 @@ export default function Patterns() {
               </div>
             </div>
 
+            {/* Why — the facts behind the meters above */}
+            {pattern.patterns?.facts?.length > 0 && (
+              <div className="pattern-facts">
+                <span className="mono meter-label">why</span>
+                <ul className="pattern-facts-list mono">
+                  {pattern.patterns.facts.map((fact, i) => (
+                    <li key={i}>{fact.claim}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* Data sources */}
             <div className="pattern-sources mono">
               Based on {pattern.dataPoints?.sleepLogs || 0} sleep logs, {pattern.dataPoints?.journalEntries || 0} journal entries, and {pattern.dataPoints?.chatSessions || 0} chats this week.
