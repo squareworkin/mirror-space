@@ -15,13 +15,14 @@ export async function generateAIResponse(systemPrompt, userPrompt) {
         baseURL: 'https://api.groq.com/openai/v1'
       });
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.8,
-        max_tokens: 200
+        max_tokens: 200,
+        reasoning_effort: 'low'
       });
       return completion.choices[0].message.content;
     } catch (error) {
