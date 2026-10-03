@@ -1,6 +1,6 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import Insight from '../models/Insight.js';
+import auth from '../middleware/supabaseAuth.js';
+import { findInsight, markSeen } from '../db/insights.js';
 import { generateDailyInsight, generateWeeklyInsight } from '../services/insightGenerator.js';
 
 const router = express.Router();
@@ -11,11 +11,7 @@ router.get('/today', auth, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let insight = await Insight.findOne({
-      userId: req.userId,
-      type: 'daily',
-      date: { $gte: today }
-    });
+    let insight = await findInsight(req.userId, 'daily', today);
 
     // Generate if not exists
     if (!insight) {
@@ -24,8 +20,7 @@ router.get('/today', auth, async (req, res) => {
 
     if (insight) {
       // Mark as seen
-      insight.seen = true;
-      await insight.save();
+      await markSeen(insight.id);
     }
 
     res.json(insight || { headline: 'Be still for a moment.', subtext: 'Not every day needs a reflection.' });
@@ -41,11 +36,7 @@ router.get('/weekly', auth, async (req, res) => {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    let insight = await Insight.findOne({
-      userId: req.userId,
-      type: 'weekly',
-      date: { $gte: weekAgo }
-    });
+    let insight = await findInsight(req.userId, 'weekly', weekAgo);
 
     if (!insight) {
       insight = await generateWeeklyInsight(req.userId);

@@ -1,4 +1,4 @@
-import Insight from '../models/Insight.js';
+import { createInsight } from '../db/insights.js';
 import { getUserContext } from './patternEngine.js';
 import { PERSONALITY_PROMPT, DAILY_INSIGHT_PROMPT } from '../prompts/personality.js';
 import OpenAI from 'openai';
@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 /**
  * Generate AI response using Groq (primary) or OpenAI (fallback)
  */
-async function generateAIResponse(systemPrompt, userPrompt) {
+export async function generateAIResponse(systemPrompt, userPrompt) {
   // Try Groq first (free, fastest)
   if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
     try {
@@ -15,13 +15,14 @@ async function generateAIResponse(systemPrompt, userPrompt) {
         baseURL: 'https://api.groq.com/openai/v1'
       });
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.8,
-        max_tokens: 200
+        max_tokens: 200,
+        reasoning_effort: 'low'
       });
       return completion.choices[0].message.content;
     } catch (error) {
@@ -96,14 +97,12 @@ export async function generateDailyInsight(userId) {
     if (context.recentPatterns.journalEntries > 0) basedOn.push('journal');
     if (context.recentPatterns.chatSessions > 0) basedOn.push('chat');
 
-    const insight = await Insight.create({
-      userId,
+    const insight = await createInsight(userId, {
       type: 'daily',
       headline,
       subtext,
       basedOn,
-      date: new Date(),
-      seen: false
+      date: new Date()
     });
 
     return insight;
@@ -143,14 +142,12 @@ export async function generateWeeklyInsight(userId) {
       subtext = "Patterns noticed across your rhythms.";
     }
 
-    const insight = await Insight.create({
-      userId,
+    const insight = await createInsight(userId, {
       type: 'weekly',
       headline,
       subtext,
       basedOn: ['sleep', 'journal', 'activity'],
-      date: new Date(),
-      seen: false
+      date: new Date()
     });
 
     return insight;

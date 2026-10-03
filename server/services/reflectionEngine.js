@@ -32,13 +32,14 @@ async function generateAIResponse(systemPrompt, userPrompt) {
   if (groq) {
     try {
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.7,
-        max_tokens: 300
+        max_tokens: 300,
+        reasoning_effort: 'low'
       });
       return completion.choices[0].message.content;
     } catch (error) {

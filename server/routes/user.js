@@ -1,6 +1,6 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import User from '../models/User.js';
+import auth from '../middleware/supabaseAuth.js';
+import { updateOnboarding, getUserProfile } from '../db/users.js';
 
 const router = express.Router();
 
@@ -9,18 +9,10 @@ router.put('/onboarding', auth, async (req, res) => {
   try {
     const { intents, permissions } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      req.userId,
-      { 
-        intents,
-        permissions,
-        onboardingComplete: true
-      },
-      { new: true }
-    );
+    const user = await updateOnboarding(req.userId, { intents, permissions });
 
     res.json({
-      id: user._id,
+      id: user.id,
       intents: user.intents,
       permissions: user.permissions,
       onboardingComplete: user.onboardingComplete
@@ -34,9 +26,9 @@ router.put('/onboarding', auth, async (req, res) => {
 // GET /api/user/profile
 router.get('/profile', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.userId);
+    const user = await getUserProfile(req.userId);
     res.json({
-      id: user._id,
+      id: user.id,
       intents: user.intents,
       permissions: user.permissions,
       onboardingComplete: user.onboardingComplete,

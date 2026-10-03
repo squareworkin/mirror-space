@@ -1,6 +1,6 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import SleepLog from '../models/SleepLog.js';
+import auth from '../middleware/supabaseAuth.js';
+import { createSleepLog, findSleepLogsSince } from '../db/sleepLogs.js';
 
 const router = express.Router();
 
@@ -13,8 +13,7 @@ router.post('/', auth, async (req, res) => {
     const wakeDate = new Date(wakeTime);
     const duration = Math.round((wakeDate - sleepDate) / (1000 * 60)); // minutes
 
-    const log = await SleepLog.create({
-      userId: req.userId,
+    const log = await createSleepLog(req.userId, {
       date: new Date(date),
       sleepTime: sleepDate,
       wakeTime: wakeDate,
@@ -35,13 +34,10 @@ router.get('/trends', auth, async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const logs = await SleepLog.find({
-      userId: req.userId,
-      date: { $gte: startDate }
-    }).sort({ date: -1 });
+    const logs = await findSleepLogsSince(req.userId, startDate);
 
     // Calculate trends
-    const avgDuration = logs.length 
+    const avgDuration = logs.length
       ? Math.round(logs.reduce((sum, l) => sum + l.duration, 0) / logs.length)
       : 0;
 
