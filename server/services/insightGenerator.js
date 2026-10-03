@@ -1,4 +1,4 @@
-import Insight from '../models/Insight.js';
+import { createInsight } from '../db/insights.js';
 import { getUserContext } from './patternEngine.js';
 import { PERSONALITY_PROMPT, DAILY_INSIGHT_PROMPT } from '../prompts/personality.js';
 import OpenAI from 'openai';
@@ -97,14 +97,12 @@ export async function generateDailyInsight(userId) {
     if (context.recentPatterns.journalEntries > 0) basedOn.push('journal');
     if (context.recentPatterns.chatSessions > 0) basedOn.push('chat');
 
-    const insight = await Insight.create({
-      userId,
+    const insight = await createInsight(userId, {
       type: 'daily',
       headline,
       subtext,
       basedOn,
-      date: new Date(),
-      seen: false
+      date: new Date()
     });
 
     return insight;
@@ -144,14 +142,12 @@ export async function generateWeeklyInsight(userId) {
       subtext = "Patterns noticed across your rhythms.";
     }
 
-    const insight = await Insight.create({
-      userId,
+    const insight = await createInsight(userId, {
       type: 'weekly',
       headline,
       subtext,
       basedOn: ['sleep', 'journal', 'activity'],
-      date: new Date(),
-      seen: false
+      date: new Date()
     });
 
     return insight;

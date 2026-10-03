@@ -1,8 +1,9 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import ChatHistory from '../models/ChatHistory.js';
+import auth from '../middleware/supabaseAuth.js';
 import { generateChatResponse } from '../services/reflectionEngine.js';
 import { getUserContext } from '../services/patternEngine.js';
+import { createSession, findSessionById, touchSessionUpdatedAt } from '../db/chatSessions.js';
+import { insertMessage, findMessagesForSession, findRecentSessionsWithMessages } from '../db/chatMessages.js';
 
 const router = express.Router();
 
@@ -18,43 +19,32 @@ router.post('/message', auth, async (req, res) => {
     // Get or create chat session
     let session;
     if (sessionId) {
-      session = await ChatHistory.findOne({ _id: sessionId, userId: req.userId });
+      session = await findSessionById(sessionId, req.userId);
     }
 
     if (!session) {
       // Get user context for AI
       const context = await getUserContext(req.userId);
-      session = await ChatHistory.create({
-        userId: req.userId,
-        messages: [],
-        context
-      });
+      session = await createSession(req.userId, context);
     }
 
-    // Add user message
-    session.messages.push({
-      role: 'user',
-      content: message,
-      timestamp: new Date()
-    });
+    const priorMessages = await findMessagesForSession(session.id);
 
-    // Generate reflective response
-    const response = await generateChatResponse(
-      session.messages,
-      session.context
-    );
+    // Add user message
+    await insertMessage(session.id, { role: 'user', content: message });
+
+    // Generate reflective response — history includes the message just added,
+    // matching the original embedded-array behavior where the push happened
+    // before the AI call.
+    const conversationHistory = [...priorMessages, { role: 'user', content: message }];
+    const response = await generateChatResponse(conversationHistory, session.context);
 
     // Add mirror response
-    session.messages.push({
-      role: 'mirror',
-      content: response,
-      timestamp: new Date()
-    });
-
-    await session.save();
+    await insertMessage(session.id, { role: 'mirror', content: response });
+    await touchSessionUpdatedAt(session.id);
 
     res.json({
-      sessionId: session._id,
+      sessionId: session.id,
       response,
       timestamp: new Date()
     });
@@ -67,11 +57,7 @@ router.post('/message', auth, async (req, res) => {
 // GET /api/chat/history — Get chat history
 router.get('/history', auth, async (req, res) => {
   try {
-    const sessions = await ChatHistory.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .select('messages createdAt');
-
+    const sessions = await findRecentSessionsWithMessages(req.userId, 10);
     res.json(sessions);
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch history' });

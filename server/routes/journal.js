@@ -1,7 +1,7 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import JournalEntry from '../models/JournalEntry.js';
+import auth from '../middleware/supabaseAuth.js';
 import { analyzeText } from '../services/patternEngine.js';
+import { createJournalEntry, findJournalEntriesPaginated, countJournalEntries } from '../db/journalEntries.js';
 
 const router = express.Router();
 
@@ -17,8 +17,7 @@ router.post('/', auth, async (req, res) => {
     // Analyze text patterns (runs silently, user doesn't see this)
     const analysis = analyzeText(content);
 
-    const entry = await JournalEntry.create({
-      userId: req.userId,
+    const entry = await createJournalEntry(req.userId, {
       type,
       content,
       sentiment: analysis.sentiment,
@@ -27,7 +26,7 @@ router.post('/', auth, async (req, res) => {
 
     // Return minimal response — no analysis shown to user
     res.status(201).json({
-      id: entry._id,
+      id: entry.id,
       type: entry.type,
       createdAt: entry.createdAt
     });
@@ -43,13 +42,8 @@ router.get('/', auth, async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const page = parseInt(req.query.page) || 1;
 
-    const entries = await JournalEntry.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .select('type content reflection createdAt');
-
-    const total = await JournalEntry.countDocuments({ userId: req.userId });
+    const entries = await findJournalEntriesPaginated(req.userId, { limit, page });
+    const total = await countJournalEntries(req.userId);
 
     res.json({ entries, total, page, pages: Math.ceil(total / limit) });
   } catch (error) {

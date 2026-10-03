@@ -1,6 +1,6 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
-import MoodPattern from '../models/MoodPattern.js';
+import auth from '../middleware/supabaseAuth.js';
+import { createMoodPattern, findLatestMoodPatterns } from '../db/moodPatterns.js';
 import { computeUserPatterns } from '../services/patternEngineV2.js';
 import { generateAIResponse } from '../services/insightGenerator.js';
 import { PERSONALITY_PROMPT } from '../prompts/personality.js';
@@ -10,10 +10,7 @@ const router = express.Router();
 // GET /api/patterns — Get detected patterns
 router.get('/', auth, async (req, res) => {
   try {
-    const patterns = await MoodPattern.find({ userId: req.userId })
-      .sort({ 'period.end': -1 })
-      .limit(4);
-
+    const patterns = await findLatestMoodPatterns(req.userId, 4);
     res.json(patterns);
   } catch (error) {
     res.status(500).json({ message: 'Could not fetch patterns' });
@@ -28,9 +25,9 @@ router.post('/predict', auth, async (req, res) => {
     if (!computed.meetsMinimumData) {
       // Not enough signal to compute anything real — skip the LLM call entirely
       // (cost guardrail) and show the same day-1 copy as before.
-      const pattern = await MoodPattern.create({
-        userId: req.userId,
-        period: { start: computed.windowStart, end: computed.windowEnd },
+      const pattern = await createMoodPattern(req.userId, {
+        periodStart: computed.windowStart,
+        periodEnd: computed.windowEnd,
         patterns: { ...computed.scores, facts: [] },
         meetsMinimumData: false,
         dataPoints: computed.dataPoints,
@@ -75,9 +72,9 @@ Return ONLY a valid JSON object with this schema:
       }
     }
 
-    const pattern = await MoodPattern.create({
-      userId: req.userId,
-      period: { start: computed.windowStart, end: computed.windowEnd },
+    const pattern = await createMoodPattern(req.userId, {
+      periodStart: computed.windowStart,
+      periodEnd: computed.windowEnd,
       patterns: { ...computed.scores, facts: computed.facts },
       meetsMinimumData: true,
       dataPoints: computed.dataPoints,

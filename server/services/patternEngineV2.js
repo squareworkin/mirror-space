@@ -1,6 +1,6 @@
-import SleepLog from '../models/SleepLog.js';
-import JournalEntry from '../models/JournalEntry.js';
-import ChatHistory from '../models/ChatHistory.js';
+import { findSleepLogsSince } from '../db/sleepLogs.js';
+import { findJournalEntriesSince } from '../db/journalEntries.js';
+import { countSessionsSince } from '../db/chatSessions.js';
 import { mean, stddev, zScore, pearsonCorrelation, clamp } from './stats.js';
 
 const MIN_BASELINE_SAMPLES = 5;
@@ -21,7 +21,7 @@ function previousDayKey(key) {
 
 export async function buildSleepSeries(userId, windowDays = 30) {
   const windowStart = new Date(Date.now() - windowDays * 86400000);
-  const logs = await SleepLog.find({ userId, date: { $gte: windowStart } }).sort({ date: 1 });
+  const logs = await findSleepLogsSince(userId, windowStart);
 
   const byDay = new Map();
   for (const log of logs) {
@@ -34,7 +34,7 @@ export async function buildSleepSeries(userId, windowDays = 30) {
         day: key,
         duration: log.duration,
         sleepHour: sleepTime.getHours() + sleepTime.getMinutes() / 60,
-        logId: log._id,
+        logId: log.id,
         createdAt: log.createdAt
       });
     }
@@ -45,7 +45,7 @@ export async function buildSleepSeries(userId, windowDays = 30) {
 
 export async function buildMoodSeries(userId, windowDays = 30) {
   const windowStart = new Date(Date.now() - windowDays * 86400000);
-  const entries = await JournalEntry.find({ userId, createdAt: { $gte: windowStart } }).sort({ createdAt: 1 });
+  const entries = await findJournalEntriesSince(userId, windowStart);
 
   const byDay = new Map();
   for (const entry of entries) {
@@ -66,7 +66,7 @@ export async function buildMoodSeries(userId, windowDays = 30) {
         totalEmotionalWords: emotionalWords,
         totalQuestionCount: questionCount,
         totalExclamationCount: exclamationCount,
-        entryIds: [entry._id]
+        entryIds: [entry.id]
       });
     } else {
       existing.comparativeSum += comparative;
@@ -75,7 +75,7 @@ export async function buildMoodSeries(userId, windowDays = 30) {
       existing.totalEmotionalWords += emotionalWords;
       existing.totalQuestionCount += questionCount;
       existing.totalExclamationCount += exclamationCount;
-      existing.entryIds.push(entry._id);
+      existing.entryIds.push(entry.id);
     }
   }
 
@@ -244,7 +244,7 @@ export async function computeUserPatterns(userId, windowDays = 30) {
   const [sleepSeries, moodSeries, chatSessionCount] = await Promise.all([
     buildSleepSeries(userId, windowDays),
     buildMoodSeries(userId, windowDays),
-    ChatHistory.countDocuments({ userId, createdAt: { $gte: windowStart } })
+    countSessionsSince(userId, windowStart)
   ]);
 
   const journalEntryCount = moodSeries.reduce((sum, p) => sum + p.entryIds.length, 0);

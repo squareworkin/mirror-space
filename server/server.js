@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import connectDB from './config/db.js';
+import { connectPostgres } from './config/postgres.js';
 
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
@@ -21,8 +21,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Connect to MongoDB
-connectDB();
+// Connect to Postgres
+connectPostgres();
 
 // Routes
 app.use('/api/auth', authRoutes);

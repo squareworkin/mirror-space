@@ -1,7 +1,7 @@
 import Sentiment from 'sentiment';
-import SleepLog from '../models/SleepLog.js';
-import JournalEntry from '../models/JournalEntry.js';
-import ChatHistory from '../models/ChatHistory.js';
+import { findSleepLogsSince } from '../db/sleepLogs.js';
+import { findJournalEntriesSince } from '../db/journalEntries.js';
+import { countSessionsSince } from '../db/chatSessions.js';
 
 const sentiment = new Sentiment();
 
@@ -51,22 +51,13 @@ export async function getUserContext(userId) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   // Gather sleep data
-  const sleepLogs = await SleepLog.find({
-    userId,
-    date: { $gte: sevenDaysAgo }
-  }).sort({ date: -1 });
+  const sleepLogs = await findSleepLogsSince(userId, sevenDaysAgo);
 
   // Gather journal data
-  const journals = await JournalEntry.find({
-    userId,
-    createdAt: { $gte: sevenDaysAgo }
-  }).sort({ createdAt: -1 });
+  const journals = await findJournalEntriesSince(userId, sevenDaysAgo);
 
   // Gather chat activity
-  const chatSessions = await ChatHistory.find({
-    userId,
-    createdAt: { $gte: sevenDaysAgo }
-  });
+  const chatSessionCount = await countSessionsSince(userId, sevenDaysAgo);
 
   // Process sleep trends
   const avgSleep = sleepLogs.length
@@ -112,7 +103,7 @@ export async function getUserContext(userId) {
     recentPatterns: {
       sleepLogs: sleepLogs.length,
       journalEntries: journals.length,
-      chatSessions: chatSessions.length,
+      chatSessions: chatSessionCount,
       daysSinceJournal,
       sentimentTrend,
       avgSleep,
